@@ -20,14 +20,27 @@ package org.apache.spark.examples
 import org.apache.spark._
 import org.apache.spark.SparkContext._
 import org.apache.spark
+import org.apache.spark.serializer.KryoRegistrator
+import com.esotericsoftware.kryo.Kryo
+
+
+class MyRegistrator extends KryoRegistrator {
+  override def registerClasses(k: Kryo) {
+    k.register(classOf[(String, Int)])
+  }
+}
 
 /** Word Count */
 object SparkWordCount {
   def main(args: Array[String]) {
-    if (args.length < 2) {
-      System.err.println("Usage: SparkWordCount <master> <file>")
+    if (args.length < 3) {
+      System.err.println("Usage : SparkWordCount <master> <file> <caseNum>")
+      System.err.println("case 1 : reduceByKey then count")
+      System.err.println("case 2 : repartition to 192 then count")
+      System.err.println("case 3 : groupByKey then count")
       System.exit(1)
     }
+
     val sc = new SparkContext(args(0), "SparkWordCount",
       System.getenv("SPARK_HOME"), SparkContext.jarOfClass(this.getClass).toSeq)
 
@@ -35,8 +48,27 @@ object SparkWordCount {
     val words = files.flatMap(_.split(" "))
     val wordsPair = words.map(x => (x, 1))
 
-    val wordsCount = wordsPair.reduceByKey(_ + _)
-    val count = wordsCount.count()
+    var count = 0L
+
+    args(2) match {
+      case "1" =>
+        val wordsCount = wordsPair.reduceByKey(_ + _)
+        count = wordsCount.count()
+
+      case "2" =>
+        val wordsRep = wordsPair.repartition(192)
+        count = wordsRep.count()
+
+      case "3" =>
+        val wordsGroup = wordsPair.groupByKey()
+        count = wordsGroup.count()
+
+      case _ => println("wrong case number")
+        sc.stop()
+        System.exit(2)
+
+    }
+
 
     println("Number of words = " + count)
     sc.stop()
