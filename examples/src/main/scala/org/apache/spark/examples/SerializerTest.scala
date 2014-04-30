@@ -43,7 +43,7 @@ object SerializerTest {
 
 
     val datasize =  args(1).toInt
-    val dataset = (0 until datasize).map( i => (i, "asmallstring"))
+    val dataset = (0 until datasize).map( i => ("asmallstring", i))
 
     val out: OutputStream = {
         new BufferedOutputStream(new FileOutputStream(args(2)), 1024 * 100)
@@ -55,6 +55,7 @@ object SerializerTest {
     dataset.foreach( value =>
       serOut.writeObject(value)
     )
+    serOut.flush()
     serOut.close()
 
     sc.stop()
