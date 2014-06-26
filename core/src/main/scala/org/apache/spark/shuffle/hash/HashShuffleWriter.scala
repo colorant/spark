@@ -25,6 +25,7 @@ import org.apache.spark.executor.ShuffleWriteMetrics
 import org.apache.spark.scheduler.MapStatus
 
 class HashShuffleWriter[K, V](
+    hashShuffleBlockManager: HashShuffleBlockManager,
     handle: BaseShuffleHandle[K, V, _],
     mapId: Int,
     context: TaskContext)
@@ -36,9 +37,8 @@ class HashShuffleWriter[K, V](
   private var stopping = false
 
   private val blockManager = SparkEnv.get.blockManager
-  private val shuffleBlockManager = blockManager.shuffleBlockManager
   private val ser = Serializer.getSerializer(dep.serializer.getOrElse(null))
-  private val shuffle = shuffleBlockManager.forMapTask(dep.shuffleId, mapId, numOutputSplits, ser)
+  private val shuffle = hashShuffleBlockManager.forMapTask(dep.shuffleId, mapId, numOutputSplits, ser)
 
   /** Write a bunch of records to this task's output */
   override def write(records: Iterator[_ <: Product2[K, V]]): Unit = {

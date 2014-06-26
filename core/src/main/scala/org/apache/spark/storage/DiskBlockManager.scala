@@ -34,11 +34,11 @@ import org.apache.spark.util.Utils
  *
  * @param rootDirs The directories to use for storing block files. Data will be hashed among these.
  */
-private[spark] class DiskBlockManager(shuffleManager: ShuffleBlockManager, rootDirs: String)
-  extends PathResolver with Logging {
+private[spark] class DiskBlockManager(blockManager: BlockManager, rootDirs: String)
+  extends Logging {
 
   private val MAX_DIR_CREATION_ATTEMPTS: Int = 10
-  private val subDirsPerLocalDir = shuffleManager.conf.getInt("spark.diskStore.subDirectories", 64)
+  private val subDirsPerLocalDir = blockManager.conf.getInt("spark.diskStore.subDirectories", 64)
 
   /* Create one local directory for each path mentioned in spark.local.dir; then, inside this
    * directory, create multiple subdirectories that we will hash files into, in order to avoid
@@ -49,23 +49,8 @@ private[spark] class DiskBlockManager(shuffleManager: ShuffleBlockManager, rootD
     System.exit(ExecutorExitCode.DISK_STORE_FAILED_TO_CREATE_DIR)
   }
   private val subDirs = Array.fill(localDirs.length)(new Array[File](subDirsPerLocalDir))
-  private var shuffleSender : ShuffleSender = null
 
   addShutdownHook()
-
-  /**
-   * Returns the physical file segment in which the given BlockId is located.
-   * If the BlockId has been mapped to a specific FileSegment, that will be returned.
-   * Otherwise, we assume the Block is mapped to a whole file identified by the BlockId directly.
-   */
-  def getBlockLocation(blockId: BlockId): FileSegment = {
-    if (blockId.isShuffle && shuffleManager.consolidateShuffleFiles) {
-      shuffleManager.getBlockLocation(blockId.asInstanceOf[ShuffleBlockId])
-    } else {
-      val file = getFile(blockId.name)
-      new FileSegment(file, 0, file.length())
-    }
-  }
 
   def getFile(filename: String): File = {
     // Figure out which local directory it hashes to, and which subdirectory in that
@@ -96,7 +81,7 @@ private[spark] class DiskBlockManager(shuffleManager: ShuffleBlockManager, rootD
 
   /** Check if disk block manager has a block. */
   def containsBlock(blockId: BlockId): Boolean = {
-    getBlockLocation(blockId).file.exists()
+    getFile(blockId.name).exists()
   }
 
   /** List all the blocks currently stored on disk by the disk manager. */
@@ -172,15 +157,6 @@ private[spark] class DiskBlockManager(shuffleManager: ShuffleBlockManager, rootD
         }
       }
     }
-
-    if (shuffleSender != null) {
-      shuffleSender.stop()
-    }
   }
 
-  private[storage] def startShuffleBlockSender(port: Int): Int = {
-    shuffleSender = new ShuffleSender(port, this)
-    logInfo(s"Created ShuffleSender binding to port: ${shuffleSender.port}")
-    shuffleSender.port
-  }
 }

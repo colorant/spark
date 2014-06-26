@@ -50,7 +50,9 @@ private[spark] trait ShuffleManager {
       context: TaskContext): ShuffleReader[K, C]
 
   /** Remove a shuffle's metadata from the ShuffleManager. */
-  def unregisterShuffle(shuffleId: Int)
+  def unregisterShuffle(shuffleId: Int): Boolean
+
+  def shuffleBlockManager: ShuffleBlockManager
 
   /** Shut down this ShuffleManager. */
   def stop(): Unit

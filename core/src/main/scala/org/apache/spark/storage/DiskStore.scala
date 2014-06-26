@@ -17,7 +17,7 @@
 
 package org.apache.spark.storage
 
-import java.io.{FileOutputStream, RandomAccessFile}
+import java.io.{File, FileOutputStream, RandomAccessFile}
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel.MapMode
 
@@ -36,7 +36,7 @@ private class DiskStore(blockManager: BlockManager, diskManager: DiskBlockManage
   val minMemoryMapBytes = blockManager.conf.getLong("spark.storage.memoryMapThreshold", 2 * 4096L)
 
   override def getSize(blockId: BlockId): Long = {
-    diskManager.getBlockLocation(blockId).length
+    diskManager.getFile(blockId.name).length
   }
 
   override def putBytes(blockId: BlockId, _bytes: ByteBuffer, level: StorageLevel): PutResult = {
@@ -91,52 +91,48 @@ private class DiskStore(blockManager: BlockManager, diskManager: DiskBlockManage
     }
   }
 
-  override def getBytes(blockId: BlockId): Option[ByteBuffer] = {
-    val segment = diskManager.getBlockLocation(blockId)
-    val channel = new RandomAccessFile(segment.file, "r").getChannel
+  private def getBytes(file: File, offset: Long, length: Long): Option[ByteBuffer] = {
+    val channel = new RandomAccessFile(file, "r").getChannel
 
     try {
       // For small files, directly read rather than memory map
-      if (segment.length < minMemoryMapBytes) {
-        val buf = ByteBuffer.allocate(segment.length.toInt)
-        channel.read(buf, segment.offset)
+      if (file.length < minMemoryMapBytes) {
+        val buf = ByteBuffer.allocate(length.toInt)
+        channel.read(buf, offset)
         buf.flip()
         Some(buf)
       } else {
-        Some(channel.map(MapMode.READ_ONLY, segment.offset, segment.length))
+        Some(channel.map(MapMode.READ_ONLY, offset, length))
       }
     } finally {
       channel.close()
     }
   }
 
+  override def getBytes(blockId: BlockId): Option[ByteBuffer] = {
+    val file = diskManager.getFile(blockId.name)
+    getBytes(file, 0, file.length)
+  }
+
+  def getBytes(segment: FileSegment): Option[ByteBuffer] = {
+    getBytes(segment.file, segment.offset, segment.length)
+  }
+
   override def getValues(blockId: BlockId): Option[Iterator[Any]] = {
     getBytes(blockId).map(buffer => blockManager.dataDeserialize(blockId, buffer))
   }
 
-  /**
-   * A version of getValues that allows a custom serializer. This is used as part of the
-   * shuffle short-circuit code.
-   */
-  def getValues(blockId: BlockId, serializer: Serializer): Option[Iterator[Any]] = {
-    getBytes(blockId).map(bytes => blockManager.dataDeserialize(blockId, bytes, serializer))
-  }
-
   override def remove(blockId: BlockId): Boolean = {
-    val fileSegment = diskManager.getBlockLocation(blockId)
-    val file = fileSegment.file
-    if (file.exists() && file.length() == fileSegment.length) {
+    val file = diskManager.getFile(blockId.name)
+    if (file.exists()) {
       file.delete()
     } else {
-      if (fileSegment.length < file.length()) {
-        logWarning(s"Could not delete block associated with only a part of a file: $blockId")
-      }
       false
     }
   }
 
   override def contains(blockId: BlockId): Boolean = {
-    val file = diskManager.getBlockLocation(blockId).file
+    val file = diskManager.getFile(blockId.name)
     file.exists()
   }
 }

@@ -34,6 +34,7 @@ import org.apache.spark.io.CompressionCodec
 import org.apache.spark.network._
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.util._
+import org.apache.spark.network.netty.{PathResolver, ShuffleSender}
 
 private[spark] sealed trait BlockValues
 private[spark] case class ByteBufferValues(buffer: ByteBuffer) extends BlockValues
@@ -60,8 +61,7 @@ private[spark] class BlockManager(
     mapOutputTracker: MapOutputTracker)
   extends Logging {
 
-  val shuffleBlockManager = new ShuffleBlockManager(this)
-  val diskBlockManager = new DiskBlockManager(shuffleBlockManager,
+  val diskBlockManager = new DiskBlockManager(this,
     conf.get("spark.local.dir", System.getProperty("java.io.tmpdir")))
   val connectionManager = new ConnectionManager(0, conf, securityManager)
 
@@ -72,23 +72,34 @@ private[spark] class BlockManager(
   // Actual storage of where blocks are kept
   private var tachyonInitialized = false
   private[storage] val memoryStore = new MemoryStore(this, maxMemory)
-  private[storage] val diskStore = new DiskStore(this, diskBlockManager)
+  private[spark] val diskStore = new DiskStore(this, diskBlockManager)
   private[storage] lazy val tachyonStore: TachyonStore = {
     val storeDir = conf.get("spark.tachyonStore.baseDir", "/tmp_spark_tachyon")
     val appFolderName = conf.get("spark.tachyonStore.folderName")
     val tachyonStorePath = s"$storeDir/$appFolderName/${this.executorId}"
     val tachyonMaster = conf.get("spark.tachyonStore.url",  "tachyon://localhost:19998")
     val tachyonBlockManager =
-      new TachyonBlockManager(shuffleBlockManager, tachyonStorePath, tachyonMaster)
+      new TachyonBlockManager(this, tachyonStorePath, tachyonMaster)
     tachyonInitialized = true
     new TachyonStore(this, tachyonBlockManager)
   }
 
+  private var shuffleSender : ShuffleSender = null
   // If we use Netty for shuffle, start a new Netty-based shuffle sender service.
   private val nettyPort: Int = {
     val useNetty = conf.getBoolean("spark.shuffle.use.netty", false)
     val nettyPortConfig = conf.getInt("spark.shuffle.sender.port", 0)
-    if (useNetty) diskBlockManager.startShuffleBlockSender(nettyPortConfig) else 0
+    if (useNetty) {
+      val resolver = new PathResolver {
+        override def getBlockLocation(blockId: BlockId): FileSegment = {
+          val shuffleBlockManager = SparkEnv.get.shuffleManager.shuffleBlockManager
+          shuffleBlockManager.getBlockLocation(blockId.asInstanceOf[ShuffleBlockId])
+        }
+      }
+      shuffleSender = new ShuffleSender(nettyPortConfig, resolver)
+      logInfo(s"Created ShuffleSender binding to port: ${shuffleSender.port}")
+      shuffleSender.port
+    } else 0
   }
 
   val blockManagerId = BlockManagerId(
@@ -335,8 +346,14 @@ private[spark] class BlockManager(
    * shuffle blocks. It is safe to do so without a lock on block info since disk store
    * never deletes (recent) items.
    */
-  def getLocalFromDisk(blockId: BlockId, serializer: Serializer): Option[Iterator[Any]] = {
-    diskStore.getValues(blockId, serializer).orElse {
+  def getLocalShuffleFromDisk(
+      blockId: BlockId, serializer: Serializer): Option[Iterator[Any]] = {
+
+    val shuffleBlockManager = SparkEnv.get.shuffleManager.shuffleBlockManager
+    val values = shuffleBlockManager.getBytes(blockId.asInstanceOf[ShuffleBlockId]).map(
+      bytes => this.dataDeserialize(blockId, bytes, serializer))
+
+    values.orElse {
       throw new BlockException(blockId, s"Block $blockId not found on disk, though it should be")
     }
   }
@@ -357,7 +374,8 @@ private[spark] class BlockManager(
     // As an optimization for map output fetches, if the block is for a shuffle, return it
     // without acquiring a lock; the disk store never deletes (recent) items so this should work
     if (blockId.isShuffle) {
-      diskStore.getBytes(blockId) match {
+      val shuffleBlockManager = SparkEnv.get.shuffleManager.shuffleBlockManager
+      shuffleBlockManager.getBytes(blockId.asInstanceOf[ShuffleBlockId]) match {
         case Some(bytes) =>
           Some(bytes)
         case None =>
@@ -1049,8 +1067,10 @@ private[spark] class BlockManager(
       heartBeatTask.cancel()
     }
     connectionManager.stop()
-    shuffleBlockManager.stop()
     diskBlockManager.stop()
+    if (shuffleSender != null) {
+      shuffleSender.stop()
+    }
     actorSystem.stop(slaveActor)
     blockInfo.clear()
     memoryStore.clear()
