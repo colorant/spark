@@ -17,13 +17,12 @@
 
 package org.apache.spark.shuffle
 
-import org.apache.spark.storage.{BlockId, FileSegment, ShuffleBlockId}
-import org.apache.spark.{SparkConf, Logging}
+import org.apache.spark.storage.{FileSegment, ShuffleBlockId}
 import java.nio.ByteBuffer
-import org.apache.spark.network.netty.PathResolver
+
 
 private[spark]
-trait ShuffleBlockManager extends PathResolver {
+trait ShuffleBlockManager {
   type ShuffleId = Int
 
   /**
