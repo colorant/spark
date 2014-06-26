@@ -162,17 +162,20 @@ class HashShuffleBlockManager(conf: SparkConf)
 
   /**
    * Returns the physical file segment in which the given BlockId is located.
-   * This function should only be called if shuffle file consolidation is enabled, as it is
-   * an error condition if we don't find the expected block.
    */
   override def getBlockLocation(id: ShuffleBlockId): FileSegment = {
-    // Search all file groups associated with this shuffle.
-    val shuffleState = shuffleStates(id.shuffleId)
-    for (fileGroup <- shuffleState.allFileGroups) {
-      val segment = fileGroup.getFileSegmentFor(id.mapId, id.reduceId)
-      if (segment.isDefined) { return segment.get }
+    if (consolidateShuffleFiles) {
+      // Search all file groups associated with this shuffle.
+      val shuffleState = shuffleStates(id.shuffleId)
+      for (fileGroup <- shuffleState.allFileGroups) {
+        val segment = fileGroup.getFileSegmentFor(id.mapId, id.reduceId)
+        if (segment.isDefined) { return segment.get }
+      }
+      throw new IllegalStateException("Failed to find shuffle block: " + id)
+    } else {
+      val file = blockManager.diskBlockManager.getFile(id)
+      new FileSegment(file, 0, file.length())
     }
-    throw new IllegalStateException("Failed to find shuffle block: " + id)
   }
 
   override def getBytes(blockId: ShuffleBlockId): Option[ByteBuffer] = {
