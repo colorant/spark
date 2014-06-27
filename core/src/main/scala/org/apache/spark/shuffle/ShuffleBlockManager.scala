@@ -20,15 +20,12 @@ package org.apache.spark.shuffle
 import org.apache.spark.storage.{FileSegment, ShuffleBlockId}
 import java.nio.ByteBuffer
 
-
 private[spark]
 trait ShuffleBlockManager {
   type ShuffleId = Int
 
   /**
    * Returns the physical file segment in which the given BlockId is located.
-   * This function should only be called if shuffle file consolidation is enabled, as it is
-   * an error condition if we don't find the expected block.
    */
   def getBlockLocation(id: ShuffleBlockId): FileSegment
 

@@ -181,7 +181,6 @@ class HashShuffleBlockManager(conf: SparkConf)
   override def getBytes(blockId: ShuffleBlockId): Option[ByteBuffer] = {
     val segment = getBlockLocation(blockId)
     blockManager.diskStore.getBytes(segment)
-
   }
 
   /** Remove all the blocks / files and metadata related to a particular shuffle. */
