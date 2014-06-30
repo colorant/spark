@@ -35,6 +35,8 @@ import org.apache.spark.network._
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.util._
 import org.apache.spark.network.netty.{PathResolver, ShuffleSender}
+import org.apache.spark.shuffle.ShuffleManager
+import org.apache.spark.shuffle.hash.HashShuffleManager
 
 private[spark] sealed trait BlockValues
 private[spark] case class ByteBufferValues(buffer: ByteBuffer) extends BlockValues
@@ -84,21 +86,35 @@ private[spark] class BlockManager(
     new TachyonStore(this, tachyonBlockManager)
   }
 
-  private var shuffleSender : ShuffleSender = null
+  val shuffleManager = {
+    val name = conf.get("spark.shuffle.manager",
+      "org.apache.spark.shuffle.hash.HashShuffleManager")
+    val clazz = Class.forName(name, true, Utils.getContextOrSparkClassLoader)
+    try {
+      clazz.getConstructor(classOf[SparkConf]).newInstance(conf).asInstanceOf[ShuffleManager]
+    } catch {
+      case _: NoSuchMethodException =>
+        clazz.getConstructor().newInstance().asInstanceOf[ShuffleManager]
+    }
+  }
+
+  private var nettyShuffleSender : ShuffleSender = null
   // If we use Netty for shuffle, start a new Netty-based shuffle sender service.
   private val nettyPort: Int = {
     val useNetty = conf.getBoolean("spark.shuffle.use.netty", false)
     val nettyPortConfig = conf.getInt("spark.shuffle.sender.port", 0)
-    if (useNetty) {
+    // At present, only HashShuffleBlockManager support the getBlockLocation method.
+    if (useNetty && shuffleManager.isInstanceOf[HashShuffleManager]) {
+      val shuffleBlockManager =
+        shuffleManager.asInstanceOf[HashShuffleManager].shuffleBlockManager
       val resolver = new PathResolver {
         override def getBlockLocation(blockId: BlockId): FileSegment = {
-          val shuffleBlockManager = SparkEnv.get.shuffleManager.shuffleBlockManager
           shuffleBlockManager.getBlockLocation(blockId.asInstanceOf[ShuffleBlockId])
         }
       }
-      shuffleSender = new ShuffleSender(nettyPortConfig, resolver)
-      logInfo(s"Created ShuffleSender binding to port: ${shuffleSender.port}")
-      shuffleSender.port
+      nettyShuffleSender = new ShuffleSender(nettyPortConfig, resolver)
+      logInfo(s"Created ShuffleSender binding to port: ${nettyShuffleSender.port}")
+      nettyShuffleSender.port
     } else 0
   }
 
@@ -349,7 +365,7 @@ private[spark] class BlockManager(
   def getLocalShuffleFromDisk(
       blockId: BlockId, serializer: Serializer): Option[Iterator[Any]] = {
 
-    val shuffleBlockManager = SparkEnv.get.shuffleManager.shuffleBlockManager
+    val shuffleBlockManager = shuffleManager.shuffleBlockManager
     val values = shuffleBlockManager.getBytes(blockId.asInstanceOf[ShuffleBlockId]).map(
       bytes => this.dataDeserialize(blockId, bytes, serializer))
 
@@ -374,7 +390,7 @@ private[spark] class BlockManager(
     // As an optimization for map output fetches, if the block is for a shuffle, return it
     // without acquiring a lock; the disk store never deletes (recent) items so this should work
     if (blockId.isShuffle) {
-      val shuffleBlockManager = SparkEnv.get.shuffleManager.shuffleBlockManager
+      val shuffleBlockManager = shuffleManager.shuffleBlockManager
       shuffleBlockManager.getBytes(blockId.asInstanceOf[ShuffleBlockId]) match {
         case Some(bytes) =>
           Some(bytes)
@@ -570,7 +586,7 @@ private[spark] class BlockManager(
       blocksByAddress: Seq[(BlockManagerId, Seq[(BlockId, Long)])],
       serializer: Serializer): BlockFetcherIterator = {
     val iter =
-      if (conf.getBoolean("spark.shuffle.use.netty", false)) {
+      if (nettyShuffleSender != null) {
         new BlockFetcherIterator.NettyBlockFetcherIterator(this, blocksByAddress, serializer)
       } else {
         new BlockFetcherIterator.BasicBlockFetcherIterator(this, blocksByAddress, serializer)
@@ -1067,9 +1083,10 @@ private[spark] class BlockManager(
       heartBeatTask.cancel()
     }
     connectionManager.stop()
+    shuffleManager.stop()
     diskBlockManager.stop()
-    if (shuffleSender != null) {
-      shuffleSender.stop()
+    if (nettyShuffleSender != null) {
+      nettyShuffleSender.stop()
     }
     actorSystem.stop(slaveActor)
     blockInfo.clear()

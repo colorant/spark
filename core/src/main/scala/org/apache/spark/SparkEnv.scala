@@ -81,7 +81,6 @@ class SparkEnv (
     pythonWorkers.foreach { case(key, worker) => worker.stop() }
     Option(httpFileServer).foreach(_.stop())
     mapOutputTracker.stop()
-    shuffleManager.stop()
     broadcastManager.stop()
     blockManager.stop()
     blockManager.master.stop()
@@ -254,8 +253,7 @@ object SparkEnv extends Logging {
       "."
     }
 
-    val shuffleManager = instantiateClass[ShuffleManager](
-      "spark.shuffle.manager", "org.apache.spark.shuffle.hash.HashShuffleManager")
+    val shuffleManager = blockManager.shuffleManager
 
     // Warn about deprecated spark.cache.class property
     if (conf.contains("spark.cache.class")) {

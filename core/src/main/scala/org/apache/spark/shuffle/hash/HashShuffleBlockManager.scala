@@ -163,7 +163,7 @@ class HashShuffleBlockManager(conf: SparkConf)
   /**
    * Returns the physical file segment in which the given BlockId is located.
    */
-  override def getBlockLocation(id: ShuffleBlockId): FileSegment = {
+  def getBlockLocation(id: ShuffleBlockId): FileSegment = {
     if (consolidateShuffleFiles) {
       // Search all file groups associated with this shuffle.
       val shuffleState = shuffleStates(id.shuffleId)

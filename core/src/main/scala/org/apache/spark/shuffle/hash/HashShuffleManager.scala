@@ -24,7 +24,7 @@ import org.apache.spark.shuffle._
  * A ShuffleManager using hashing, that creates one output file per reduce partition on each
  * mapper (possibly reusing these across waves of tasks).
  */
-class HashShuffleManager(conf: SparkConf) extends ShuffleManager {
+class HashShuffleManager(conf: SparkConf) extends ShuffleManager with Logging{
 
   val hashShuffleBlockManager = new HashShuffleBlockManager(conf)
 

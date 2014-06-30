@@ -24,11 +24,6 @@ private[spark]
 trait ShuffleBlockManager {
   type ShuffleId = Int
 
-  /**
-   * Returns the physical file segment in which the given BlockId is located.
-   */
-  def getBlockLocation(id: ShuffleBlockId): FileSegment
-
   def getBytes(blockId: ShuffleBlockId): Option[ByteBuffer]
 
   def stop(): Unit
