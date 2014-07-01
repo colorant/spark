@@ -47,13 +47,14 @@ object SparkWordCount {
     val sc = new SparkContext(args(0), "SparkWordCount",
       System.getenv("SPARK_HOME"), SparkContext.jarOfClass(this.getClass).toSeq)
 
+    val iteration = args(3).toInt
     /* for text file */
 
     //val files = sc.textFile(args(1))
     //val words = files.flatMap(_.split(" "))
 
     /* for Sequence file */
-    val files : RDD[(Long, String)] = sc.sequenceFile(args(1))
+    val files : RDD[(String, String)] = sc.sequenceFile(args(1))
     val words = files.flatMap{ case (x,y) => y.split(" ")}
 
 
@@ -63,7 +64,12 @@ object SparkWordCount {
 
     args(2) match {
       case "0" =>
-        count = wordsPair.count()
+
+        for(i <- 1 to iteration) {
+          println("count iteration: %d start", i)
+          count = wordsPair.count()
+          println("count iteration: %d, count = %d", i, count)
+        }
 
       case "1" =>
         val wordsCount = wordsPair.reduceByKey(_ + _)
