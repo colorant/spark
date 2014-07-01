@@ -22,6 +22,8 @@ import org.apache.spark.SparkContext._
 import org.apache.spark
 import org.apache.spark.serializer.KryoRegistrator
 import com.esotericsoftware.kryo.Kryo
+import org.apache.hadoop.io.NullWritable
+import org.apache.spark.rdd.RDD
 
 
 class MyRegistrator extends KryoRegistrator {
@@ -33,8 +35,9 @@ class MyRegistrator extends KryoRegistrator {
 /** Word Count */
 object SparkWordCount {
   def main(args: Array[String]) {
-    if (args.length < 3) {
-      System.err.println("Usage : SparkWordCount <master> <file> <caseNum>")
+    if (args.length < 4) {
+      System.err.println("Usage : SparkWordCount <master> <file> <caseNum> <iteration>")
+      System.err.println("case 0 : Count directly without reduceByKey")
       System.err.println("case 1 : reduceByKey then count")
       System.err.println("case 2 : repartition to 192 then count")
       System.err.println("case 3 : groupByKey then count")
@@ -44,13 +47,24 @@ object SparkWordCount {
     val sc = new SparkContext(args(0), "SparkWordCount",
       System.getenv("SPARK_HOME"), SparkContext.jarOfClass(this.getClass).toSeq)
 
-    val files = sc.textFile(args(1))
-    val words = files.flatMap(_.split(" "))
+    /* for text file */
+
+    //val files = sc.textFile(args(1))
+    //val words = files.flatMap(_.split(" "))
+
+    /* for Sequence file */
+    val files : RDD[(Long, String)] = sc.sequenceFile(args(1))
+    val words = files.flatMap{ case (x,y) => y.split(" ")}
+
+
     val wordsPair = words.map(x => (x, 1))
 
     var count = 0L
 
     args(2) match {
+      case "0" =>
+        count = wordsPair.count()
+
       case "1" =>
         val wordsCount = wordsPair.reduceByKey(_ + _)
         count = wordsCount.count()
