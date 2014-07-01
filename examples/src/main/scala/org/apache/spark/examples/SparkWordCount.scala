@@ -24,6 +24,8 @@ import org.apache.spark.serializer.KryoRegistrator
 import com.esotericsoftware.kryo.Kryo
 import org.apache.hadoop.io.NullWritable
 import org.apache.spark.rdd.RDD
+import org.apache.spark.storage.StorageLevel
+import scala.reflect.ClassTag
 
 
 class MyRegistrator extends KryoRegistrator {
@@ -35,25 +37,44 @@ class MyRegistrator extends KryoRegistrator {
 /** Word Count */
 object SparkWordCount {
   def main(args: Array[String]) {
-    if (args.length < 4) {
-      System.err.println("Usage : SparkWordCount <master> <file> <caseNum> <iteration>")
+    if (args.length < 5) {
+      System.err.println("Usage : SparkWordCount <master> <file> <caseNum> <iteration> <cache level>")
       System.err.println("case 0 : Count directly without reduceByKey")
       System.err.println("case 1 : reduceByKey then count")
       System.err.println("case 2 : repartition to 192 then count")
       System.err.println("case 3 : groupByKey then count")
+      System.err.println("cache level : 0 no, 1 memory only, 2 disk only, 3 memory + disk")
       System.exit(1)
+    }
+
+    def cacheRDD[U: ClassTag] (rdd: RDD[U], level: Int): RDD[U] = {
+
+      val cl = level match {
+        case 0 =>
+          StorageLevel.NONE
+        case 1 =>
+          StorageLevel.MEMORY_ONLY
+        case 2 =>
+          StorageLevel.DISK_ONLY
+        case 3 =>
+          StorageLevel.MEMORY_AND_DISK
+      }
+
+      rdd.persist(cl)
+
     }
 
     val sc = new SparkContext(args(0), "SparkWordCount",
       System.getenv("SPARK_HOME"), SparkContext.jarOfClass(this.getClass).toSeq)
 
     val iteration = args(3).toInt
-    /* for text file */
+    val cacheLevel = args(4).toInt
 
+    /* for text file */
     //val files = sc.textFile(args(1))
     //val words = files.flatMap(_.split(" "))
 
-    /* for Sequence file */
+    /* for Hibench Sequence file */
     val files : RDD[(String, String)] = sc.sequenceFile(args(1))
     val words = files.flatMap{ case (x,y) => y.split(" ")}
 
@@ -64,11 +85,12 @@ object SparkWordCount {
 
     args(2) match {
       case "0" =>
-
+        val wordsPairCache = cacheRDD(wordsPair, cacheLevel)
         for(i <- 1 to iteration) {
-          println("count iteration: %d start", i)
-          count = wordsPair.count()
-          println("count iteration: %d, count = %d", i, count)
+          println("count iteration: %d start".format(i))
+
+          count = wordsPairCache.count()
+          println("count iteration: %d, count = %d".format(i, count))
         }
 
       case "1" =>
