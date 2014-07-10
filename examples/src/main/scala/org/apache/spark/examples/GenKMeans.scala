@@ -20,10 +20,10 @@ package org.apache.spark.examples
 import org.apache.spark._
 import java.util.Random
 import scala.reflect.ClassTag
-import org.apache.spark.rdd.RDD
+import org.apache.spark.rdd.{DataGenRDD, DataGenRDDPartition, DataGenerator, RDD}
 import breeze.linalg.DenseVector
 
-
+/*
 class RandomRDDIterator(seed: Int, size: Long) extends Iterator[(Double, Double, Double)] {
   var index: Long = 0
   val ranGen = new Random(seed)
@@ -60,7 +60,26 @@ class RandomRDD(
   }
 
 }
+*/
 
+class KMeansDataGen(size: Long) extends DataGenerator[(Double, Double, Double)] {
+
+  var ranGen: Random = _
+
+  override def init(split: DataGenRDDPartition) = {
+    ranGen = new Random(split.index)
+  }
+
+  var index: Long = 0
+
+  override def hasNext: Boolean = (index < size)
+
+  override def next(): (Double, Double, Double) = {
+    index = index + 1
+    (ranGen.nextDouble, ranGen.nextDouble, ranGen.nextDouble)
+  }
+
+}
 
 object GenKMeans {
   def main(args: Array[String]) {
@@ -88,7 +107,12 @@ object GenKMeans {
       points
     }
 */
-    val pointsRDD = new RandomRDD(sc, partitionNum, parSize)
+
+    //val pointsRDD = new RandomRDD(sc, partitionNum, parSize)
+
+    val generator = new KMeansDataGen(parSize)
+    val pointsRDD = new DataGenRDD(sc, generator, partitionNum)
+
     // pointsRDD.saveAsTextFile(dir)
     pointsRDD.saveAsObjectFile(dir)
 

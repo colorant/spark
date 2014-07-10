@@ -21,10 +21,10 @@ import org.apache.spark._
 import scala.reflect.ClassTag
 
 trait DataGenerator[T] {
-  def init(split: DataGenRDDPartition)
+  def init(split: DataGenRDDPartition) = {}
   def hasNext: Boolean
   def next(): T
-  def cleanup()
+  def cleanup() = {}
 }
 
 class DataGenRDDIterator[T: ClassTag](
@@ -38,7 +38,7 @@ class DataGenRDDIterator[T: ClassTag](
   override def next(): T = generator.next
 }
 
-class DataGenRDDPartition(val i: Int) extends Partition {
+class DataGenRDDPartition(i: Int) extends Partition {
   override val index: Int = i
 }
 

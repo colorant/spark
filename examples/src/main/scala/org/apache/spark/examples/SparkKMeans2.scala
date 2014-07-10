@@ -31,15 +31,12 @@ import org.apache.spark.storage.StorageLevel
  * K-means clustering.
  */
 object SparkKMeans2 {
-  val R = 1000     // Scaling factor
-  val rand = new Random(42)
 
   def parseVector(line: String): Vector[Double] = {
     DenseVector(line.split(' ').map(_.toDouble))
   }
 
   def closestPoint(p: Vector[Double], centers: Array[Vector[Double]]): Int = {
-    var index = 0
     var bestIndex = 0
     var closest = Double.PositiveInfinity
 
