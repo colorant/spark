@@ -20,7 +20,7 @@ package org.apache.spark.rdd
 import org.apache.spark._
 import scala.reflect.ClassTag
 
-trait DataGenerator[T] {
+trait DataGenerator[T] extends Serializable {
   def init(split: DataGenRDDPartition) = {}
   def hasNext: Boolean
   def next(): T
