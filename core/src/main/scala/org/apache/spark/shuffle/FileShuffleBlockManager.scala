@@ -15,24 +15,23 @@
  * limitations under the License.
  */
 
-package org.apache.spark.shuffle.hash
+package org.apache.spark.shuffle
 
 import java.io.File
+import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 
 import scala.collection.JavaConversions._
+import scala.Some
 
 import org.apache.spark.{SparkEnv, SparkConf, Logging}
 import org.apache.spark.serializer.Serializer
-import org.apache.spark.shuffle.hash.HashShuffleBlockManager.ShuffleFileGroup
+import org.apache.spark.shuffle.FileShuffleBlockManager.ShuffleFileGroup
 import org.apache.spark.util.{MetadataCleaner, MetadataCleanerType, TimeStampedHashMap}
 import org.apache.spark.util.collection.{PrimitiveKeyOpenHashMap, PrimitiveVector}
 import org.apache.spark.storage._
-import org.apache.spark.shuffle.ShuffleBlockManager
 import org.apache.spark.storage.ShuffleBlockId
-import scala.Some
-import java.nio.ByteBuffer
 
 /** A group of writers for a ShuffleMapTask, one writer per reducer. */
 private[spark] trait ShuffleWriterGroup {
@@ -64,14 +63,14 @@ private[spark] trait ShuffleWriterGroup {
  * files within a ShuffleFileGroups associated with the block's reducer.
  */
 private[spark]
-class HashShuffleBlockManager(conf: SparkConf)
+class FileShuffleBlockManager(conf: SparkConf)
   extends ShuffleBlockManager with Logging {
 
-  lazy val blockManager = SparkEnv.get.blockManager
+  private lazy val blockManager = SparkEnv.get.blockManager
 
   // Turning off shuffle file consolidation causes all shuffle Blocks to get their own file.
   // TODO: Remove this once the shuffle file consolidation feature is stable.
-  val consolidateShuffleFiles =
+  private val consolidateShuffleFiles =
     conf.getBoolean("spark.shuffle.consolidateFiles", false)
 
   private val bufferSize = conf.getInt("spark.shuffle.file.buffer.kb", 100) * 1024
@@ -167,8 +166,9 @@ class HashShuffleBlockManager(conf: SparkConf)
     if (consolidateShuffleFiles) {
       // Search all file groups associated with this shuffle.
       val shuffleState = shuffleStates(id.shuffleId)
-      for (fileGroup <- shuffleState.allFileGroups) {
-        val segment = fileGroup.getFileSegmentFor(id.mapId, id.reduceId)
+      val iter = shuffleState.allFileGroups.iterator
+      while (iter.hasNext) {
+        val segment = iter.next.getFileSegmentFor(id.mapId, id.reduceId)
         if (segment.isDefined) { return segment.get }
       }
       throw new IllegalStateException("Failed to find shuffle block: " + id)
@@ -228,7 +228,7 @@ class HashShuffleBlockManager(conf: SparkConf)
 }
 
 private[spark]
-object HashShuffleBlockManager {
+object FileShuffleBlockManager {
   /**
    * A group of shuffle files, one per reducer.
    * A particular mapper will be assigned a single ShuffleFileGroup to write its output to.

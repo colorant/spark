@@ -17,15 +17,15 @@
 
 package org.apache.spark.shuffle.hash
 
-import org.apache.spark.shuffle.{BaseShuffleHandle, ShuffleWriter}
-import org.apache.spark.{Logging, MapOutputTracker, SparkEnv, TaskContext}
-import org.apache.spark.storage.{BlockObjectWriter}
+import org.apache.spark._
+import org.apache.spark.shuffle._
+import org.apache.spark.storage.BlockObjectWriter
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.executor.ShuffleWriteMetrics
 import org.apache.spark.scheduler.MapStatus
 
 class HashShuffleWriter[K, V](
-    hashShuffleBlockManager: HashShuffleBlockManager,
+    shuffleBlockManager: FileShuffleBlockManager,
     handle: BaseShuffleHandle[K, V, _],
     mapId: Int,
     context: TaskContext)
@@ -38,8 +38,7 @@ class HashShuffleWriter[K, V](
 
   private val blockManager = SparkEnv.get.blockManager
   private val ser = Serializer.getSerializer(dep.serializer.getOrElse(null))
-  private val shuffle =
-    hashShuffleBlockManager.forMapTask(dep.shuffleId, mapId, numOutputSplits, ser)
+  private val shuffle = shuffleBlockManager.forMapTask(dep.shuffleId, mapId, numOutputSplits, ser)
 
   /** Write a bunch of records to this task's output */
   override def write(records: Iterator[_ <: Product2[K, V]]): Unit = {

@@ -103,7 +103,7 @@ private[spark] class BlockManager(
   private val nettyPort: Int = {
     val useNetty = conf.getBoolean("spark.shuffle.use.netty", false)
     val nettyPortConfig = conf.getInt("spark.shuffle.sender.port", 0)
-    // At present, only HashShuffleBlockManager support the getBlockLocation method.
+    // At present, only FileShuffleBlockManager support the getBlockLocation method.
     if (useNetty && shuffleManager.isInstanceOf[HashShuffleManager]) {
       val shuffleBlockManager =
         shuffleManager.asInstanceOf[HashShuffleManager].shuffleBlockManager
