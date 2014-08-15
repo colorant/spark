@@ -131,6 +131,7 @@ object SparkSerializer {
         val data = ser.serialize(s)
 
         while(num < itemNum) {
+          data.rewind()
           num += 1
           ser.deserialize(data)
           dataCount += data.limit
