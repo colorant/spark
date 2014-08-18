@@ -27,11 +27,14 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 import scala.reflect.ClassTag
 import java.io._
+import java.nio.channels.FileChannel.MapMode
+import java.nio.ByteBuffer
+import org.apache.spark.util.ByteBufferInputStream
 
 
 class MyRegistrator4SparkSerializer extends KryoRegistrator {
   override def registerClasses(k: Kryo) {
-    k.register(classOf[(String, Int)])
+    k.register(classOf[(String, Long)])
   }
 }
 
@@ -82,7 +85,7 @@ object SparkSerializer {
 
     val sc = new SparkContext(args(0), "SparkSerializer", conf)
     val s = "A String for Serialize"
-    val s2 = (s, 1)
+    val s2 = (s, 1L)
 
     if (caseNum == 0 || caseNum ==1) {
       val resultRDD = sc.makeRDD((1 to parNum), parNum).map{ x =>
@@ -103,7 +106,7 @@ object SparkSerializer {
 
           while(num < itemNum) {
             num += 1
-            serOut.writeObject(s2)
+            serOut.writeObject((s, num))
           }
 
           serOut.flush()
@@ -113,7 +116,7 @@ object SparkSerializer {
         } else {
           while(num < itemNum) {
             num += 1
-            val data = ser.serialize(s2)
+            val data = ser.serialize((s, num))
             dataCount += data.limit
           }
         }
@@ -131,34 +134,42 @@ object SparkSerializer {
         if (file != null) {
           val f = new File(file + x.toString)
 
+          val channel = new RandomAccessFile(new File(file + x.toString), "r").getChannel
+          val bytes: ByteBuffer= channel.map(MapMode.READ_ONLY, 0, f.length())
+
           val in: InputStream = {
-            new BufferedInputStream(new FileInputStream(f), 1024 * 100)
+            new ByteBufferInputStream(bytes, true)
           }
 
           val serIn = ser.deserializeStream(in)
-
+          val p = serIn.asIterator.asInstanceOf[Iterator[(String, Long)]]
+          while(p.hasNext) {
+            p.next()
+          }
+/*
           var finished = false
           while(!finished) {
             try {
-              serIn.readObject[(String, Int)]()
+              //serIn.readObject[(String, Long)]()
+              serIn.readObject[(String, Long)]()
             } catch {
               case eof: EOFException =>
                 finished = true
             }
 
           }
-
+  */
           serIn.close()
           dataCount = f.length()
 
         } else {
           var num:Long = 0L
-          val data = ser.serialize(s2)
+          val data = ser.serialize((s, Long))
 
           while(num < itemNum) {
             data.rewind()
             num += 1
-            ser.deserialize(data)
+            ser.deserialize[(String, Long)](data)
             dataCount += data.limit
           }
         }
