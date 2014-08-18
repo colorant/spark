@@ -26,7 +26,7 @@ import org.apache.hadoop.io.NullWritable
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 import scala.reflect.ClassTag
-import java.io.{File, BufferedOutputStream, OutputStream, FileOutputStream}
+import java.io._
 
 
 class MyRegistrator4SparkSerializer extends KryoRegistrator {
@@ -128,18 +128,43 @@ object SparkSerializer {
         var dataCount: Long = 0L
         val ser = SparkEnv.get.serializer.newInstance()
 
-        var num:Long = 0L
-        val data = ser.serialize(s2)
+        if (file != null) {
+          val f = new File(file + x.toString)
 
-        while(num < itemNum) {
-          data.rewind()
-          num += 1
-          ser.deserialize(data)
-          dataCount += data.limit
+          val in: InputStream = {
+            new BufferedInputStream(new FileInputStream(f), 1024 * 100)
+          }
+
+          val serIn = ser.deserializeStream(in)
+
+          var finished = false
+          while(!finished) {
+            try {
+              serIn.readObject[(String, Int)]()
+            } catch {
+              case eof: EOFException =>
+                finished = true
+            }
+
+          }
+
+          serIn.close()
+          dataCount = f.length()
+
+        } else {
+          var num:Long = 0L
+          val data = ser.serialize(s2)
+
+          while(num < itemNum) {
+            data.rewind()
+            num += 1
+            ser.deserialize(data)
+            dataCount += data.limit
+          }
         }
-
         dataCount
       }
+
       resultRDD.collect().foreach(x => println("deser, size of data= " + x))
     }
 
