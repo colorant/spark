@@ -82,6 +82,7 @@ object SparkSerializer {
 
     val sc = new SparkContext(args(0), "SparkSerializer", conf)
     val s = "A String for Serialize"
+    val s2 = (s, 1)
 
     if (caseNum == 0 || caseNum ==1) {
       val resultRDD = sc.makeRDD((1 to parNum), parNum).map{ x =>
@@ -102,7 +103,7 @@ object SparkSerializer {
 
           while(num < itemNum) {
             num += 1
-            serOut.writeObject(s)
+            serOut.writeObject(s2)
           }
 
           serOut.flush()
@@ -112,7 +113,7 @@ object SparkSerializer {
         } else {
           while(num < itemNum) {
             num += 1
-            val data = ser.serialize(s)
+            val data = ser.serialize(s2)
             dataCount += data.limit
           }
         }
@@ -128,7 +129,7 @@ object SparkSerializer {
         val ser = SparkEnv.get.serializer.newInstance()
 
         var num:Long = 0L
-        val data = ser.serialize(s)
+        val data = ser.serialize(s2)
 
         while(num < itemNum) {
           data.rewind()
